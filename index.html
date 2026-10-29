@@ -153,7 +153,7 @@ const SNAKES  = [ [17,7],[54,34],[62,19],[64,60],[87,24],[95,75],[98,79] ];
 const SIZE = 100;
 
 let players = [ {pos:0,name:"Pemain 1"}, {pos:0,name:"Pemain 2"} ];
-let current = 0, gameOver = false, busy = false;
+let current = 0, gameOver = false, busy = false, lastDice = 0;
 
 // ====== Web Audio (suara sintesis, tanpa file) ======
 let audioCtx = null;
@@ -264,6 +264,7 @@ function rollDice() {
   btn.disabled = true;
   dice.classList.add('rolling');
   const value = Math.floor(Math.random()*6) + 1;
+  lastDice = value;
   setTimeout(() => {
     dice.classList.remove('rolling');
     dice.textContent = value;
@@ -363,6 +364,17 @@ function afterMove(idx) {
     btn.textContent = '🔄 Main Lagi';
     btn.disabled = false;
     btn.onclick = resetGame;
+    busy = false;
+    return;
+  }
+  // Aturan: dadu 6 = dapat giliran sekali lagi
+  if (lastDice === 6) {
+    document.getElementById('status').textContent = '🎲 ' + player.name + ' dapat 6! Main lagi...';
+    sound.turn();
+    const btn = document.getElementById('rollBtn');
+    btn.textContent = '🎲 Lempar Dadu (bonus 6!)';
+    btn.disabled = false;
+    btn.onclick = rollDice;
     busy = false;
     return;
   }
