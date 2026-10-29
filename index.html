@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🐍 Ular Tangga</title>
+<style>
+:root {
+  --bg: #0f172a;
+  --board-bg: #1e293b;
+  --cell: #334155;
+  --accent: #fbbf24;
+  --snake: #22c55e;
+  --ladder: #38bdf8;
+  --p1: #ef4444;
+  --p2: #3b82f6;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg); color: #fff; min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px; overflow-x: hidden;
+}
+h1 { font-size: 20px; margin: 8px 0 4px; display: flex; align-items: center; gap: 8px; }
+.subtitle { font-size: 12px; color: #94a3b8; margin-bottom: 10px; }
+#board {
+  display: grid; grid-template-columns: repeat(10, 1fr);
+  gap: 2px; background: var(--board-bg); padding: 8px;
+  border-radius: 12px; width: 100%; max-width: 420px;
+  aspect-ratio: 1; touch-action: manipulation;
+}
+.cell {
+  background: var(--cell); border-radius: 4px; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: #cbd5e1; font-weight: 600; min-height: 0;
+}
+.cell.special { background: #1e293b; }
+.cell.start { border: 2px solid var(--accent); }
+.piece {
+  position: absolute; width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid #fff; z-index: 5; transition: all .4s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,.5);
+}
+.piece.p1 { background: var(--p1); }
+.piece.p2 { background: var(--p2); }
+#controls {
+  width: 100%; max-width: 420px; margin-top: 14px;
+  display: flex; flex-direction: column; gap: 10px; align-items: center;
+}
+#dice {
+  width: 64px; height: 64px; background: var(--accent); color: #1e293b;
+  border-radius: 12px; font-size: 28px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 8px rgba(0,0,0,.4);
+}
+#dice.rolling { animation: shake .4s ease; }
+@keyframes shake { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-15deg)} 75%{transform:rotate(15deg)} }
+#rollBtn {
+  width: 100%; max-width: 300px; padding: 14px; font-size: 17px; font-weight: 700;
+  background: var(--accent); color: #1e293b; border: none; border-radius: 12px;
+  cursor: pointer; transition: transform .1s;
+}
+#rollBtn:active { transform: scale(.96); }
+#rollBtn:disabled { background: #64748b; color: #94a3b8; cursor: not-allowed; }
+#status {
+  font-size: 14px; text-align: center; min-height: 22px; color: #e2e8f0;
+}
+#msg { font-size: 12px; color: #94a3b8; text-align: center; min-height: 16px; }
+.players { display: flex; gap: 16px; margin-bottom: 8px; font-size: 13px; }
+.players .pl { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; background: #1e293b; }
+.players .pl.active { outline: 2px solid var(--accent); }
+.dot { width: 12px; height: 12px; border-radius: 50%; }
+.dot.p1 { background: var(--p1); } .dot.p2 { background: var(--p2); }
+</style>
+</head>
+<body>
+<h1>🐍 Ular Tangga</h1>
+<div class="subtitle">Game mini Telegram — 2 pemain</div>
+<div class="players">
+  <div class="pl" id="pl1"><div class="dot p1"></div><span>Pemain 1</span></div>
+  <div class="pl" id="pl2"><div class="dot p2"></div><span>Pemain 2</span></div>
+</div>
+<div id="board"></div>
+<div id="controls">
+  <div id="dice">🎲</div>
+  <button id="rollBtn">🎲 Lempar Dadu</button>
+  <div id="status">Tekan "Lempar Dadu" untuk mulai!</div>
+  <div id="msg"></div>
+</div>
+
+<script>
+// ====== Konfigurasi ular & tangga ======
+// Tangga: [dari, ke] — naik
+const LADDERS = [
+  [3, 22], [8, 30], [28, 84], [51, 67], [71, 91], [80, 99]
+];
+// Ular: [dari, ke] — turun
+const SNAKES = [
+  [17, 7], [54, 34], [62, 19], [64, 60], [87, 24], [95, 75], [98, 79]
+];
+const BOARD_SIZE = 100;
+
+let players = [ {pos:0, name:"Pemain 1"}, {pos:0, name:"Pemain 2"} ];
+let current = 0; // 0 atau 1
+let gameOver = false;
+
+// ====== Buat papan ======
+function buildBoard() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  const snakeMap = {}; const ladderMap = {};
+  SNAKES.forEach(([a,b]) => snakeMap[a] = b);
+  LADDERS.forEach(([a,b]) => ladderMap[a] = b);
+  // Grid 10x10, nomor zigzag (boustrophedon)
+  for (let row = 9; row >= 0; row--) {
+    for (let col = 0; col < 10; col++) {
+      let num;
+      if (row % 2 === 1) { // baris ganjil: kiri->kanan
+        num = (row * 10) + col + 1;
+      } else { // baris genap: kanan->kiri
+        num = (row * 10) + (9 - col) + 1;
+      }
+      const cell = document.createElement('div');
+      cell.className = 'cell' + (num === 1 ? ' start' : '');
+      cell.id = 'cell-' + num;
+      let content = num;
+      if (snakeMap[num]) { content = '🐍' + num; cell.classList.add('special'); }
+      else if (ladderMap[num]) { content = '🪜' + num; cell.classList.add('special'); }
+      cell.innerHTML = '<span style="position:absolute;top:2px;left:3px;font-size:8px">' + content + '</span>';
+      board.appendChild(cell);
+    }
+  }
+}
+
+// ====== Render posisi pemain ======
+function renderPieces() {
+  // Hapus semua piece lama
+  document.querySelectorAll('.piece').forEach(p => p.remove());
+  players.forEach((p, idx) => {
+    if (p.pos === 0) return;
+    const cell = document.getElementById('cell-' + p.pos);
+    if (!cell) return;
+    const piece = document.createElement('div');
+    piece.className = 'piece ' + (idx === 0 ? 'p1' : 'p2');
+    // Offset agar dua pemain tidak menumpuk
+    piece.style.left = (idx === 0 ? '20%' : '55%');
+    piece.style.top = (idx === 0 ? '20%' : '55%');
+    cell.appendChild(piece);
+  });
+}
+
+// ====== Roll dadu ======
+function rollDice() {
+  if (gameOver) return;
+  const btn = document.getElementById('rollBtn');
+  const dice = document.getElementById('dice');
+  btn.disabled = true;
+  dice.classList.add('rolling');
+  const value = Math.floor(Math.random() * 6) + 1;
+  dice.textContent = value;
+  setTimeout(() => {
+    dice.classList.remove('rolling');
+    movePlayer(current, value);
+  }, 500);
+}
+
+// ====== Pindah pemain ======
+function movePlayer(idx, steps) {
+  const player = players[idx];
+  player.pos += steps;
+  if (player.pos > BOARD_SIZE) {
+    player.pos = BOARD_SIZE - (player.pos - BOARD_SIZE);
+  }
+  // Cek tangga
+  let msg = player.name + ' dapat ' + steps + '.';
+  const ladder = LADDERS.find(([a]) => a === player.pos);
+  const snake = SNAKES.find(([a]) => a === player.pos);
+  if (ladder) {
+    player.pos = ladder[1];
+    msg += ' 🪜 Naik tangga ke ' + player.pos + '!';
+  } else if (snake) {
+    player.pos = snake[1];
+    msg += ' 🐍 Kena ular, turun ke ' + player.pos + '!';
+  }
+  renderPieces();
+  document.getElementById('status').textContent = msg;
+  // Cek menang
+  if (player.pos === BOARD_SIZE) {
+    gameOver = true;
+    document.getElementById('status').textContent = '🎉 ' + player.name + ' MENANG!';
+    document.getElementById('msg').textContent = 'Game selesai. Tekan "Main Lagi" untuk mulai ulang.';
+    btn.textContent = '🔄 Main Lagi';
+    btn.disabled = false;
+    btn.onclick = resetGame;
+    return;
+  }
+  // Ganti giliran
+  current = 1 - current;
+  updateActivePlayer();
+  btn.textContent = '🎲 Lempar Dadu';
+  btn.disabled = false;
+  btn.onclick = rollDice;
+}
+
+function updateActivePlayer() {
+  document.getElementById('pl1').classList.toggle('active', current === 0);
+  document.getElementById('pl2').classList.toggle('active', current === 1);
+}
+
+function resetGame() {
+  players = [ {pos:0, name:"Pemain 1"}, {pos:0, name:"Pemain 2"} ];
+  current = 0; gameOver = false;
+  renderPieces();
+  updateActivePlayer();
+  document.getElementById('status').textContent = 'Tekan "Lempar Dadu" untuk mulai!';
+  document.getElementById('msg').textContent = '';
+  const btn = document.getElementById('rollBtn');
+  btn.textContent = '🎲 Lempar Dadu';
+  btn.disabled = false;
+  btn.onclick = rollDice;
+}
+
+// ====== Inisialisasi ======
+buildBoard();
+renderPieces();
+updateActivePlayer();
+document.getElementById('rollBtn').addEventListener('click', rollDice);
+</script>
+</body>
+</html>
